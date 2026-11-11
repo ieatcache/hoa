@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOA Voting Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a notice-board ledger. One column of items, each with a vote bar measured against the whole building. */
+:root{
+  --bg:#eef1ee; --surface:#ffffff; --sunk:#e3e8e4; --line:#cfd7d1;
+  --ink:#17221d; --muted:#57665e;
+  --accent:#0c5f4b; --accent-ink:#ffffff; --accent-soft:#d9ebe4;
+  --good:#1f7a4d; --crit:#b3402f; --warn:#96690a; --idle:#9aa8a0;
+  --display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#111815; --surface:#1a2420; --sunk:#222e29; --line:#33423b;
+    --ink:#e7eeea; --muted:#9db0a6;
+    --accent:#5cc7a6; --accent-ink:#0b1a15; --accent-soft:#1f3a31;
+    --good:#56c48a; --crit:#ec8572; --warn:#e0b354; --idle:#5d6d65;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111815; --surface:#1a2420; --sunk:#222e29; --line:#33423b;
+  --ink:#e7eeea; --muted:#9db0a6;
+  --accent:#5cc7a6; --accent-ink:#0b1a15; --accent-soft:#1f3a31;
+  --good:#56c48a; --crit:#ec8572; --warn:#e0b354; --idle:#5d6d65;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding:20px 16px 64px;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;line-height:1.15}
+h1{font-size:26px;font-weight:700}
+h2{font-size:19px;font-weight:700}
+h3{font-size:14px;font-weight:500;color:var(--muted);font-family:var(--body);text-transform:uppercase;letter-spacing:.06em}
+p{margin:0}
+.muted{color:var(--muted)}
+.num{font-variant-numeric:tabular-nums}
+header.top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+.sample{display:inline-block;font-size:12px;font-weight:600;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 6px;margin-bottom:6px}
+.viewer{display:flex;flex-direction:column;gap:4px;font-size:13px}
+select,input,textarea,button{font:inherit;color:inherit}
+select,input[type=text],input[type=number],textarea{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+textarea{width:100%;min-height:70px;resize:vertical}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font-family:var(--display);font-size:24px;font-weight:700}
+.stat span{font-size:13px;color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:6px;border-bottom:2px solid var(--line)}
+nav a{padding:8px 12px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
+nav a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+nav a .count{font-weight:500;font-size:13px}
+.toast{background:var(--accent-soft);border-left:4px solid var(--accent);padding:8px 12px;border-radius:4px}
+.list{display:flex;flex-direction:column;gap:14px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.item-head{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.item-head .meta{font-size:13px;color:var(--muted)}
+.pill{font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;white-space:nowrap;border:1px solid currentColor}
+.pill.open{color:var(--accent)} .pill.passed{color:var(--good);background:color-mix(in srgb,var(--good) 12%,transparent)}
+.pill.failed{color:var(--crit)} .pill.shelved{color:var(--muted)} .pill.proposal{color:var(--warn)}
+.tally-line{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.tally-line strong{font-family:var(--display);font-size:20px}
+.bar{position:relative;height:18px;border-radius:5px;background:var(--sunk);display:flex;overflow:visible}
+.bar i{display:block;height:100%}
+.bar i:first-child{border-radius:5px 0 0 5px}
+.seg-yes{background:var(--good)} .seg-no{background:var(--crit)} .seg-wait{background:var(--idle)}
+.seg-off{background:repeating-linear-gradient(135deg,var(--sunk) 0 5px,var(--line) 5px 10px);flex:1;border-radius:0 5px 5px 0}
+.mark{position:absolute;top:-5px;bottom:-5px;width:3px;background:var(--ink);border-radius:2px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.legend .l-yes::before{background:var(--good)} .legend .l-no::before{background:var(--crit)}
+.legend .l-wait::before{background:var(--idle)}
+.legend .l-off::before{background:repeating-linear-gradient(135deg,var(--sunk) 0 3px,var(--line) 3px 6px);border:1px solid var(--line)}
+.legend .l-mark::before{background:var(--ink);width:3px;height:12px}
+.outlook{font-size:14px}
+.outlook.warn{color:var(--warn)} .outlook.good{color:var(--good)} .outlook.crit{color:var(--crit)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--surface);padding:7px 12px;font-weight:600}
+button:hover{border-color:var(--ink)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.yes[aria-pressed="true"]{background:var(--good);border-color:var(--good);color:var(--surface)}
+button.no[aria-pressed="true"]{background:var(--crit);border-color:var(--crit);color:var(--surface)}
+button.link{border:0;background:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline}
+.admin{border-top:1px dashed var(--line);padding-top:10px;font-size:13px}
+.admin button,.admin select{font-size:13px;padding:5px 9px}
+.tablebox{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+td.amt,th.amt{text-align:right;font-variant-numeric:tabular-nums}
+.comments{display:flex;flex-direction:column;gap:8px}
+.comment{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:14px}
+.stance{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:4px;padding:2px 6px;height:fit-content;margin-top:2px;min-width:68px;text-align:center}
+.stance.for{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.stance.against{background:color-mix(in srgb,var(--crit) 18%,transparent);color:var(--crit)}
+.stance.question{background:var(--sunk);color:var(--muted)}
+.addrow input[type=text]{flex:1 1 160px}
+.cact{margin-top:4px;gap:12px}
+button.thread-t{border:0;background:none;padding:0;font-weight:600;font-size:15px;text-align:left;color:var(--ink)}
+button.thread-t:hover{text-decoration:underline}
+.tsum{color:var(--muted)} .tby{font-size:13px;margin-top:4px} .tdetail{margin-top:6px}
+.compose{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg)}
+.cnt{font-weight:400;font-variant-numeric:tabular-nums}
+.cbids{margin-top:6px;border:1px solid var(--line);border-radius:6px}
+.cbids tr:last-child td{border-bottom:0}
+button.up{font-size:13px;padding:2px 9px}
+button.up[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.replies{border-left:2px solid var(--line);padding-left:10px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.form{display:flex;flex-direction:column;gap:10px}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600}
+.empty{padding:24px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+(function(){
+"use strict";
+/* Paste your Supabase project URL and anon (public) key here. */
+var CFG={url:"YOUR_SUPABASE_URL",key:"YOUR_SUPABASE_ANON_KEY"};
+
+var sb=null,session=null,ME=null;
+var S={building:"",promotePct:25,viewer:null,admin:false,tab:"agenda",toast:"",showNew:false,open:{},openThread:{},compose:null,replyTo:null,bidTo:null,
+  roster:[],full:[],items:[],phase:"loading",sent:"",busy:false,loadedAt:0,confirmRm:null};
+
+var esc=function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
+var money=function(n){return "$"+Number(n).toLocaleString("en-US");};
+var total=function(){return S.roster.length;};
+var unitsOf=function(name){return S.roster.filter(function(r){return r.owner===name;}).map(function(r){return r.unit;});};
+var joinedUnits=function(){return S.roster.filter(function(r){return r.status==="joined";}).map(function(r){return r.unit;});};
+var isAdmin=function(){return S.admin;};
+var RULES={majority:"More than half of all units",twothirds:"Two-thirds of all units",threequarters:"Three-quarters of all units"};
+var needed=function(rule){var t=total();if(rule==="twothirds")return Math.ceil(t*2/3);if(rule==="threequarters")return Math.ceil(t*3/4);return Math.floor(t/2)+1;};
+var promoteNeeded=function(){return Math.max(1,Math.ceil(total()*S.promotePct/100));};
+var find=function(id){return S.items.filter(function(i){return i.id===id;})[0];};
+var findThread=function(it,id){return it.comments.filter(function(c){return c.id===id;})[0];};
+var plural=function(n,w){return n+" "+w+(n===1?"":"s");};
+var fmtDate=function(d){return d?new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";};
+function trunc(t,n){t=String(t||"");return t.length>n?t.slice(0,n).replace(/\s+\S*$/,"")+"…":t;}
+function tally(it){
+  var yes=0,no=0,wait=0,off=0,j=joinedUnits();
+  S.roster.forEach(function(r){var v=it.votes[r.unit];if(v==="yes")yes++;else if(v==="no")no++;else if(j.indexOf(r.unit)>=0)wait++;else off++;});
+  return {yes:yes,no:no,wait:wait,off:off};
+}
+function supportCount(it){var u=S.roster.map(function(r){return r.unit;});return it.support.filter(function(x){return u.indexOf(x)>=0;}).length;}
+var pct=function(n){return (total()?n/total()*100:0).toFixed(2)+"%";};
+
+/* ---------- Data ---------- */
+async function load(){
+  var w=await sb.rpc("whoami");if(w.error)throw w.error;ME=w.data;
+  if(!ME.member){S.phase=ME.roster_empty?"setup":"stranger";return;}
+  var q=await Promise.all([
+    sb.from("settings").select("*").eq("id",1).maybeSingle(),
+    sb.rpc("roster_list"),
+    sb.from("items").select("*").order("id"),
+    sb.from("threads").select("*").order("id"),
+    sb.from("replies").select("*").order("id"),
+    sb.from("bids").select("*").order("id"),
+    sb.from("votes").select("*"),
+    sb.from("supports").select("*"),
+    sb.from("upvotes").select("*"),
+    ME.admin?sb.from("roster").select("*").order("unit"):Promise.resolve({data:[]})
+  ]);
+  q.forEach(function(r){if(r.error)throw r.error;});
+  var st=q[0].data||{},threads=q[3].data,replies=q[4].data,bids=q[5].data,votes=q[6].data,sups=q[7].data,ups=q[8].data;
+  S.building=st.building||"";S.promotePct=st.promote_pct||25;
+  S.roster=q[1].data.map(function(r){return {unit:r.unit,owner:r.owner,status:r.joined?"joined":"none"};});
+  S.full=q[9].data;S.viewer=ME.name;S.admin=!!ME.admin;
+  var toBid=function(b){return {c:b.contractor,a:Number(b.amount)};};
+  S.items=q[2].data.map(function(i){
+    var v={};votes.forEach(function(x){if(x.item_id===i.id)v[x.unit]=x.choice;});
+    return {id:i.id,status:i.status,rule:i.rule,title:i.title,body:i.body,author:i.author,deadline:i.deadline||"",votes:v,
+      support:sups.filter(function(x){return x.item_id===i.id;}).map(function(x){return x.unit;}),
+      bids:bids.filter(function(b){return b.item_id===i.id&&b.thread_id==null;}).map(toBid),
+      comments:threads.filter(function(t){return t.item_id===i.id;}).map(function(t){
+        return {id:t.id,who:t.author,stance:t.stance,title:t.title,text:t.summary,detail:t.detail,
+          up:ups.filter(function(u){return u.thread_id===t.id;}).map(function(u){return u.owner;}),
+          replies:replies.filter(function(r){return r.thread_id===t.id;}).map(function(r){return {who:r.author,text:r.body};}),
+          bids:bids.filter(function(b){return b.thread_id===t.id;}).map(toBid)};
+      })};
+  });
+  S.phase="app";S.loadedAt=Date.now();
+}
+function check(r){if(r.error)throw r.error;return r.data;}
+async function run(fn){
+  if(S.busy)return;S.busy=true;
+  try{await fn();await load();}catch(e){S.toast=(e&&e.message)||String(e);}
+  S.busy=false;render();
+}
+
+/* ---------- Views ---------- */
+function shell(inner){return '<header class="top"><div><h1>'+esc(S.building||"HOA Voting")+"</h1></div>"+(session?'<div class="viewer"><span class="muted">'+esc(session.user.email)+'</span><button data-act="signout">Sign out</button></div>':"")+"</header>"+(S.toast?'<p class="toast" role="status">'+esc(S.toast)+"</p>":"")+inner;}
+function header(){
+  var j=joinedUnits().length,t=total(),mine=unitsOf(S.viewer);
+  return '<header class="top"><div><h1>'+esc(S.building||"Your building")+'</h1>'+
+    '<p class="muted">Signed in as '+esc(S.viewer)+", "+(mine.length>1?"units ":"unit ")+esc(mine.join(" and "))+", "+plural(mine.length,"vote")+(S.admin?", admin":"")+"</p></div>"+
+    '<div class="row"><button data-act="refresh">Refresh</button><button data-act="signout">Sign out</button></div></header>'+
+    '<section class="stats" aria-label="Building summary">'+
+    '<div class="stat"><b class="num">'+t+"</b><span>units, one vote each</span></div>"+
+    '<div class="stat"><b class="num">'+j+"</b><span>votes on the system</span></div>"+
+    '<div class="stat"><b class="num">'+(t-j)+"</b><span>votes not on the system</span></div></section>";
+}
+function signinView(){
+  if(S.sent)return shell('<article class="item"><h2>Check your email</h2><p>We sent a sign-in link to '+esc(S.sent)+'. Open it on this device to continue.</p><div><button data-act="resetsent">Use a different email</button></div></article>');
+  return shell('<article class="item form"><h2>Sign in</h2><p class="muted">Enter the email address your building has on file. We will email you a link, no password needed.</p>'+
+    '<label for="si-email">Email<input type="text" id="si-email" inputmode="email" autocomplete="email" placeholder="you@example.com"></label>'+
+    '<div class="row"><button class="primary" data-act="signin">Email me a sign-in link</button></div></article>');
+}
+function setupView(){
+  return shell('<article class="item form"><h2>Set up your building</h2><p class="muted">You are the first person here, so you become the admin. You can add the other units and owners afterwards.</p>'+
+    '<label for="su-b">Building name<input type="text" id="su-b" placeholder="Building or association name"></label>'+
+    '<label for="su-o">Your name<input type="text" id="su-o" placeholder="First and last name"></label>'+
+    '<label for="su-u">Your unit or units, separated by commas<input type="text" id="su-u" placeholder="601, 102"></label>'+
+    '<div class="row"><button class="primary" data-act="setup">Create building</button></div></article>');
+}
+function strangerView(){
+  return shell('<article class="item"><h2>Your email is not on the roster</h2><p>'+esc(ME&&ME.email)+" is not listed as an owner. Ask your building admin to add this email address to the roster, then sign in again.</p></article>");
+}
+function nav(){
+  var c=function(f){return S.items.filter(f).length;};
+  var tabs=[["agenda","Agenda",c(function(i){return ["agenda","passed","failed"].indexOf(i.status)>=0;})],
+            ["proposals","Proposals",c(function(i){return i.status==="proposal";})],
+            ["shelved","Shelved",c(function(i){return i.status==="shelved";})]];
+  if(isAdmin())tabs.push(["roster","Roster",null]);
+  return "<nav>"+tabs.map(function(t){return '<a href="#'+t[0]+'"'+(S.tab===t[0]?' aria-current="page"':"")+">"+t[1]+(t[2]===null?"":' <span class="count num">'+t[2]+"</span>")+"</a>";}).join("")+"</nav>";
+}
+function voteBlock(it){
+  var t=tally(it),need=needed(it.rule),open=it.status==="agenda";
+  var short=need-t.yes,out,cls;
+  if(it.status==="passed"||t.yes>=need){out="Passed with "+t.yes+" yes votes.";cls="good";}
+  else if(it.status==="failed"){out="Vote closed. It did not reach "+need+" yes votes.";cls="crit";}
+  else if(t.yes+t.wait>=need){out="Needs "+plural(short,"more yes vote")+". "+plural(t.wait,"vote")+" on the system "+(t.wait===1?"has":"have")+" not been cast.";cls="warn";}
+  else{out="Cannot pass with the owners on the system alone. It needs "+short+" more and only "+t.wait+" uncast "+(t.wait===1?"vote is":"votes are")+" on the system. "+plural(t.off,"vote")+" belong to owners who have not joined.";cls="crit";}
+  var mine=unitsOf(S.viewer),my=it.votes[mine[0]];
+  var h='<div><h3>Vote</h3><p class="tally-line"><strong class="num">'+t.yes+" of "+need+"</strong><span>yes votes needed to pass</span>"+
+    '<span class="muted">'+esc(RULES[it.rule])+". Not voting counts the same as no.</span></p></div>"+
+    '<div class="bar" role="img" aria-label="'+t.yes+" yes, "+t.no+" no, "+t.wait+" not yet voted, "+t.off+' not on the system">'+
+    '<i class="seg-yes" style="width:'+pct(t.yes)+'"></i><i class="seg-no" style="width:'+pct(t.no)+'"></i><i class="seg-wait" style="width:'+pct(t.wait)+'"></i><i class="seg-off"></i>'+
+    '<span class="mark" style="left:calc('+pct(need)+' - 1px)"></span></div>'+
+    '<div class="legend num"><span class="l-yes">Yes '+t.yes+'</span><span class="l-no">No '+t.no+'</span><span class="l-wait">Not yet voted '+t.wait+'</span><span class="l-off">Not on the system '+t.off+'</span><span class="l-mark">Passes at '+need+"</span></div>"+
+    '<p class="outlook '+cls+'">'+out+"</p>";
+  if(open){
+    h+='<div class="row"><button class="yes" data-act="vote" data-v="yes" data-id="'+it.id+'" aria-pressed="'+(my==="yes")+'">Vote yes</button>'+
+       '<button class="no" data-act="vote" data-v="no" data-id="'+it.id+'" aria-pressed="'+(my==="no")+'">Vote no</button>'+
+       '<span class="muted">'+(my?"You voted "+my+" with "+plural(mine.length,"vote")+". You can change it until the vote closes.":"Your vote counts "+(mine.length>1?mine.length+" times, once per unit.":"once."))+"</span></div>";
+  }
+  return h;
+}
+function supportBlock(it){
+  var n=supportCount(it),need=promoteNeeded(),mine=unitsOf(S.viewer),on=it.support.indexOf(mine[0])>=0;
+  var h='<div><h3>Support</h3><p class="tally-line"><strong class="num">'+n+" of "+need+'</strong><span>needed to move to the agenda</span></p></div>'+
+    '<div class="bar" role="img" aria-label="'+n+" of "+need+' supporting votes"><i class="seg-yes" style="width:'+pct(n)+'"></i><span class="mark" style="left:calc('+pct(need)+' - 1px)"></span></div>';
+  if(it.status==="proposal")h+='<div class="row"><button class="'+(on?"":"primary")+'" data-act="support" data-id="'+it.id+'">'+(on?"Withdraw my support":"Support this")+'</button><span class="muted">'+(on?"You support this with "+plural(mine.length,"vote")+".":"Adds "+plural(mine.length,"vote")+".")+"</span></div>";
+  return h;
+}
+function bidTable(bids){return '<table><thead><tr><th>Contractor</th><th class="amt">Bid</th></tr></thead><tbody>'+bids.slice().sort(function(a,b){return a.a-b.a;}).map(function(b){return "<tr><td>"+esc(b.c)+'</td><td class="amt">'+money(b.a)+"</td></tr>";}).join("")+"</tbody></table>";}
+function bidsBlock(it){
+  var canAdd=(isAdmin()||it.author===S.viewer)&&["proposal","agenda"].indexOf(it.status)>=0;
+  if(!it.bids.length&&!canAdd)return "";
+  var h="<div><h3>Contractor bids</h3>";
+  if(it.bids.length)h+='<div class="tablebox">'+bidTable(it.bids)+"</div>";
+  else h+='<p class="muted">No bids listed yet.</p>';
+  if(canAdd)h+='<div class="row addrow" style="margin-top:8px"><input type="text" id="bidc-'+it.id+'" placeholder="Contractor name" aria-label="Contractor name"><input type="number" id="bida-'+it.id+'" placeholder="Amount" aria-label="Bid amount in dollars" min="0" style="width:120px"><button data-act="bid" data-id="'+it.id+'">Add bid</button></div>';
+  return h+"</div>";
+}
+function commentsBlock(it){
+  var n=it.comments.length,live=it.status!=="shelved";
+  var order=it.comments.slice().sort(function(x,y){return y.up.length-x.up.length||x.id-y.id;});
+  var h="<div><h3>Discussion ("+plural(n,"thread")+')</h3><p class="muted" style="font-size:13px;margin-bottom:8px">Most upvoted threads appear first. Open one to see its details, bids and replies.</p><div class="comments">';
+  h+=order.map(function(c){
+    var up=c.up,on=up.indexOf(S.viewer)>=0,key=it.id+"-"+c.id,isOpen=!!S.openThread[key],rs=c.replies,bd=c.bids,d=' data-id="'+it.id+'" data-c="'+c.id+'"';
+    var meta=[];if(rs.length)meta.push(rs.length+(rs.length===1?" reply":" replies"));if(bd.length)meta.push(plural(bd.length,"bid"));
+    var r='<div class="comment"><span class="stance '+esc(c.stance)+'">'+esc(c.stance)+'</span><div>'+
+      '<button class="thread-t" data-act="thread"'+d+' aria-expanded="'+isOpen+'">'+esc(c.title)+"</button>"+
+      '<p class="tsum">'+esc(isOpen?c.text:trunc(c.text,140))+"</p>";
+    if(isOpen){
+      r+='<p class="muted tby">From '+esc(c.who)+", "+esc(unitsOf(c.who).join(", "))+"</p>";
+      if(c.detail)r+='<p class="tdetail">'+esc(c.detail)+"</p>";
+      if(bd.length)r+='<div class="tablebox cbids">'+bidTable(bd)+"</div>";
+      if(S.bidTo===key)r+='<div class="row addrow" style="margin-top:6px"><input type="text" id="cbc-'+key+'" placeholder="Contractor name" aria-label="Contractor name"><input type="number" id="cba-'+key+'" placeholder="Amount" aria-label="Bid amount in dollars" min="0" style="width:120px"><button data-act="cbid"'+d+">Add bid</button></div>";
+      if(rs.length||S.replyTo===key){
+        r+='<div class="replies">'+rs.map(function(x){return '<div><strong>'+esc(x.who)+'</strong> <span class="muted">'+esc(unitsOf(x.who).join(", "))+"</span><br>"+esc(x.text)+"</div>";}).join("");
+        if(S.replyTo===key)r+='<div class="row addrow"><input type="text" id="rt-'+key+'" placeholder="Reply to '+esc(c.who)+'" aria-label="Reply"><button data-act="sendreply"'+d+">Reply</button></div>";
+        r+="</div>";
+      }
+    }
+    r+='<div class="row cact"><button class="up" data-act="up"'+d+' aria-pressed="'+on+'" aria-label="Upvote this thread, '+up.length+' so far">&#9650; <span class="num">'+up.length+"</span></button>"+
+      '<button class="link" data-act="thread"'+d+">"+(isOpen?"Close":"Open"+(meta.length?" ("+meta.join(", ")+")":""))+"</button>"+
+      (isOpen&&live?'<button class="link" data-act="reply"'+d+">Reply</button>":"")+
+      (isOpen&&live&&c.who===S.viewer?'<button class="link" data-act="cbidtoggle"'+d+">"+(S.bidTo===key?"Done adding bids":"Add contractor bids")+"</button>":"")+"</div>";
+    return r+"</div></div>";
+  }).join("");
+  if(live){
+    if(S.compose===it.id)h+='<div class="form compose"><div class="row"><select id="st-'+it.id+'" aria-label="Your position"><option value="for">For</option><option value="against">Against</option><option value="question">Question</option></select></div>'+
+      '<label for="ctt-'+it.id+'">Title <span class="muted cnt" id="ctt-'+it.id+'-n">0/60</span><input type="text" id="ctt-'+it.id+'" maxlength="60" placeholder="Your point in a few words"></label>'+
+      '<label for="ct-'+it.id+'">Short description <span class="muted cnt" id="ct-'+it.id+'-n">0/140</span><input type="text" id="ct-'+it.id+'" maxlength="140" placeholder="One or two sentences people see before opening"></label>'+
+      '<label for="cd-'+it.id+'">Full details, shown when opened (optional)<textarea id="cd-'+it.id+'"></textarea></label>'+
+      '<div class="row"><button class="primary" data-act="comment" data-id="'+it.id+'">Post thread</button><button data-act="compose" data-id="'+it.id+'">Cancel</button><span class="muted">You can add contractor bids after posting.</span></div></div>';
+    else h+='<div><button data-act="compose" data-id="'+it.id+'">Start a thread</button></div>';
+  }
+  return h+"</div></div>";
+}
+function adminBlock(it){
+  if(!isAdmin())return "";
+  var b=[];
+  if(it.status==="proposal")b.push('<button data-act="promote" data-id="'+it.id+'">Move to agenda now</button>');
+  if(it.status==="agenda"){
+    b.push('<label for="rule-'+it.id+'">Passing rule <select id="rule-'+it.id+'" data-chg="rule" data-id="'+it.id+'">'+Object.keys(RULES).map(function(k){return '<option value="'+k+'"'+(k===it.rule?" selected":"")+">"+RULES[k]+"</option>";}).join("")+"</select></label>");
+    b.push('<label for="dl-'+it.id+'">Decide by <input type="date" id="dl-'+it.id+'" data-chg="deadline" data-id="'+it.id+'" value="'+esc(it.deadline)+'"></label>');
+    b.push('<button data-act="close" data-id="'+it.id+'">Close the vote</button>');
+  }
+  if(it.status==="proposal"||it.status==="agenda")b.push('<button data-act="shelve" data-id="'+it.id+'">Shelve</button>');
+  if(it.status==="shelved")b.push('<button data-act="unshelve" data-id="'+it.id+'">Return to proposals</button>');
+  return b.length?'<div class="admin row"><span class="muted">Admin</span>'+b.join("")+"</div>":"";
+}
+function card(it){
+  var labels={agenda:["open","Vote open"],passed:["passed","Passed"],failed:["failed","Did not pass"],proposal:["proposal","Proposal"],shelved:["shelved","Shelved"]};
+  var l=labels[it.status],open=!!S.open[it.id],onAgenda=["agenda","passed","failed"].indexOf(it.status)>=0;
+  var h='<article class="item"><div class="item-head"><div><h2>'+esc(it.title)+'</h2><p class="meta">Raised by '+esc(it.author)+(it.deadline&&it.status==="agenda"?" · Decide by "+esc(fmtDate(it.deadline)):"")+'</p></div><span class="pill '+l[0]+'">'+l[1]+"</span></div>";
+  h+="<p>"+esc(open?it.body:trunc(it.body,140))+"</p>";
+  h+=onAgenda?voteBlock(it):supportBlock(it);
+  h+='<div><button class="link" data-act="toggle" data-id="'+it.id+'" aria-expanded="'+open+'">'+(open?"Show less":"Open ("+plural(it.bids.length,"bid")+", "+plural(it.comments.length,"thread")+")")+"</button></div>";
+  if(open)h+=bidsBlock(it)+commentsBlock(it);
+  return h+adminBlock(it)+"</article>";
+}
+function listView(filter,empty){
+  var xs=S.items.filter(filter);
+  return '<div class="list">'+(xs.length?xs.map(card).join(""):'<p class="empty">'+empty+"</p>")+"</div>";
+}
+function newForm(){
+  if(!S.showNew)return '<div><button class="primary" data-act="shownew">Post a proposal</button></div>';
+  return '<article class="item form"><h2>New proposal</h2><label for="np-title">Title<input type="text" id="np-title" maxlength="120" placeholder="What should the building do?"></label>'+
+    '<label for="np-body">Details<textarea id="np-body" placeholder="Why it matters, what it might cost"></textarea></label>'+
+    '<div class="row"><button class="primary" data-act="post">Post proposal</button><button data-act="cancelnew">Cancel</button></div></article>';
+}
+function rosterView(){
+  var me=(ME.email||"").toLowerCase();
+  var rows=S.full.map(function(r){
+    var mine=r.email.toLowerCase()===me,u=esc(r.unit);
+    var act=mine?"":'<button data-act="mkadmin" data-u="'+u+'">'+(r.is_admin?"Remove admin":"Make admin")+'</button><button data-act="rmunit" data-u="'+u+'">'+(S.confirmRm===r.unit?"Click again to remove":"Remove")+"</button>";
+    return '<tr><td class="num">'+u+"</td><td>"+esc(r.owner)+(r.is_admin?' <span class="muted">(admin)</span>':"")+"</td><td>"+esc(r.email)+"</td><td>"+(r.joined_at?"Joined":"Not signed in yet")+'</td><td><div class="row">'+act+"</div></td></tr>";
+  }).join("");
+  return '<article class="item"><h2>Owner roster</h2><p class="muted">One row per unit. An owner with two units has two rows with the same email, and two votes. Owners join by signing in at this site with the email listed here. The site does not email them an invitation, so send them the address yourself.</p>'+
+    '<div class="tablebox"><table><thead><tr><th>Unit</th><th>Owner</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>'+rows+"</tbody></table></div>"+
+    '<div class="row addrow"><input type="text" id="ru-unit" placeholder="Unit" aria-label="Unit" style="flex:0 1 90px"><input type="text" id="ru-owner" placeholder="Owner name" aria-label="Owner name"><input type="text" id="ru-email" placeholder="Owner email" aria-label="Owner email" inputmode="email"><button class="primary" data-act="addunit">Add unit</button></div></article>'+
+    '<article class="item form"><h2>Replace the roster from a CSV file</h2><p class="muted">Three columns: unit, owner name, email. A header row is fine. Your own row must be in the file. Units missing from the file are removed along with their votes.</p>'+
+    '<div class="row"><input type="file" id="csv" accept=".csv,text/csv,text/plain" aria-label="Roster CSV file"></div></article>'+
+    '<article class="item form"><h2>Settings</h2><label for="bname">Building name<input type="text" id="bname" data-chg="bname" value="'+esc(S.building)+'"></label>'+
+    '<label for="promo">Share of all units a proposal needs to reach the agenda (percent)<input type="number" id="promo" data-chg="promo" min="1" max="100" value="'+S.promotePct+'" style="width:100px"></label>'+
+    '<p class="muted">Currently '+promoteNeeded()+" of "+total()+" votes. The passing rule is set on each agenda item.</p></article>";
+}
+function render(){
+  var app=document.getElementById("app"),html;
+  if(S.phase==="config")html=shell('<article class="item"><h2>Almost there</h2><p>This site is not connected to its database yet. Add the Supabase project URL and anon key at the top of the script in index.html.</p></article>');
+  else if(S.phase==="loading")html=shell('<p class="empty">Loading…</p>');
+  else if(S.phase==="signin")html=signinView();
+  else if(S.phase==="setup")html=setupView();
+  else if(S.phase==="stranger")html=strangerView();
+  else{
+    if(S.tab==="roster"&&!isAdmin())S.tab="agenda";
+    var body;
+    if(S.tab==="proposals")body=newForm()+listView(function(i){return i.status==="proposal";},"No open proposals. Post the first one.");
+    else if(S.tab==="shelved")body=listView(function(i){return i.status==="shelved";},"Nothing is shelved.");
+    else if(S.tab==="roster")body=rosterView();
+    else body=listView(function(i){return ["agenda","passed","failed"].indexOf(i.status)>=0;},"Nothing is on the agenda yet. Post a proposal on the Proposals tab. It moves here once it has enough support.");
+    html=header()+nav()+(S.toast?'<p class="toast" role="status">'+esc(S.toast)+"</p>":"")+body;
+  }
+  app.innerHTML=html;S.toast="";
+}
+function val(id){var e=document.getElementById(id);return e?e.value.trim():"";}
+function fail(msg){S.toast=msg;render();}
+
+/* ---------- Actions ---------- */
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-act]");if(!b)return;
+  var a=b.dataset.act,it=b.dataset.id?find(+b.dataset.id):null,mine=unitsOf(S.viewer),cid=b.dataset.c?+b.dataset.c:null,key=it&&cid!=null?it.id+"-"+cid:null;
+  if(a!=="rmunit")S.confirmRm=null;
+  /* screen-only actions */
+  if(a==="toggle"){S.open[it.id]=!S.open[it.id];return render();}
+  if(a==="thread"){S.openThread[key]=!S.openThread[key];return render();}
+  if(a==="compose"){S.compose=S.compose===it.id?null:it.id;return render();}
+  if(a==="reply"){S.replyTo=S.replyTo===key?null:key;return render();}
+  if(a==="cbidtoggle"){S.bidTo=S.bidTo===key?null:key;return render();}
+  if(a==="shownew"){S.showNew=true;return render();}
+  if(a==="cancelnew"){S.showNew=false;return render();}
+  if(a==="resetsent"){S.sent="";return render();}
+  if(a==="refresh")return run(async function(){});
+  if(a==="signout"){sb.auth.signOut();return;}
+  if(a==="signin"){
+    var em=val("si-email").toLowerCase();if(!/^\S+@\S+\.\S+$/.test(em))return fail("Enter a valid email address.");
+    if(S.busy)return;S.busy=true;
+    sb.auth.signInWithOtp({email:em,options:{emailRedirectTo:location.origin+location.pathname}}).then(function(r){
+      S.busy=false;if(r.error)S.toast=r.error.message;else S.sent=em;render();});
+    return;
+  }
+  if(a==="setup"){
+    var so=val("su-o"),su=val("su-u").split(",").map(function(x){return x.trim();}).filter(Boolean),sbn=val("su-b");
+    if(!so||!su.length)return fail("Enter your name and at least one unit.");
+    return run(async function(){check(await sb.rpc("bootstrap",{p_building:sbn,p_name:so,p_units:su}));S.tab="roster";S.toast="Building created. Add the other units below, then post a proposal.";});
+  }
+  if(a==="vote"){var same=it.votes[mine[0]]===b.dataset.v;return run(async function(){check(await sb.rpc("cast_vote",{p_item:it.id,p_choice:same?null:b.dataset.v}));});}
+  if(a==="support")return run(async function(){check(await sb.rpc("toggle_support",{p_item:it.id}));});
+  if(a==="up")return run(async function(){check(await sb.rpc("toggle_upvote",{p_thread:cid}));});
+  if(a==="promote"||a==="shelve"||a==="unshelve"||a==="close"){
+    var ns=a==="promote"?"agenda":a==="shelve"?"shelved":a==="unshelve"?"proposal":(tally(it).yes>=needed(it.rule)?"passed":"failed");
+    return run(async function(){check(await sb.from("items").update({status:ns}).eq("id",it.id));});
+  }
+  if(a==="comment"){
+    var tt=val("ctt-"+it.id),t=val("ct-"+it.id),dt=val("cd-"+it.id),stn=val("st-"+it.id);
+    if(!tt||!t)return fail("Add a title and a short description.");
+    return run(async function(){var row=check(await sb.from("threads").insert({item_id:it.id,stance:stn,title:tt,summary:t,detail:dt,author:S.viewer}).select().single());S.compose=null;S.openThread[it.id+"-"+row.id]=true;});
+  }
+  if(a==="sendreply"){var rt=val("rt-"+key);if(!rt)return;return run(async function(){check(await sb.from("replies").insert({thread_id:cid,author:S.viewer,body:rt}));S.replyTo=null;});}
+  if(a==="bid"||a==="cbid"){
+    var c=val(a==="bid"?"bidc-"+it.id:"cbc-"+key),amt=parseFloat(val(a==="bid"?"bida-"+it.id:"cba-"+key));
+    if(!c||!(amt>=0))return fail("Enter a contractor name and a bid amount.");
+    return run(async function(){check(await sb.from("bids").insert({item_id:it.id,thread_id:a==="cbid"?cid:null,contractor:c,amount:amt,created_by:S.viewer}));});
+  }
+  if(a==="post"){
+    var title=val("np-title"),body=val("np-body");if(!title)return fail("Give the proposal a title.");
+    return run(async function(){
+      var row=check(await sb.from("items").insert({title:title,body:body,author:S.viewer}).select().single());
+      check(await sb.rpc("toggle_support",{p_item:row.id}));
+      S.showNew=false;S.toast="Posted. Your own "+plural(mine.length,"vote")+" already "+(mine.length===1?"counts":"count")+" as support.";
+    });
+  }
+  if(a==="addunit"){
+    var nu=val("ru-unit"),no=val("ru-owner"),ne=val("ru-email").toLowerCase();
+    if(!nu||!no||!/^\S+@\S+\.\S+$/.test(ne))return fail("Enter a unit, an owner name and a valid email.");
+    if(S.roster.some(function(r){return r.unit===nu;}))return fail("Unit "+nu+" is already on the roster.");
+    return run(async function(){check(await sb.from("roster").insert({unit:nu,owner:no,email:ne}));});
+  }
+  if(a==="rmunit"){
+    var ru=b.dataset.u;if(S.confirmRm!==ru){S.confirmRm=ru;return render();}
+    S.confirmRm=null;return run(async function(){check(await sb.from("roster").delete().eq("unit",ru));});
+  }
+  if(a==="mkadmin"){
+    var mu=b.dataset.u,row=S.full.filter(function(r){return r.unit===mu;})[0];
+    return run(async function(){check(await sb.from("roster").update({is_admin:!row.is_admin}).eq("email",row.email));});
+  }
+});
+document.addEventListener("change",function(e){
+  var t=e.target,k=t.dataset.chg;
+  if(k==="rule")return run(async function(){check(await sb.from("items").update({rule:t.value}).eq("id",+t.dataset.id));});
+  if(k==="deadline")return run(async function(){check(await sb.from("items").update({deadline:t.value||null}).eq("id",+t.dataset.id));});
+  if(k==="bname"){var bn=t.value.trim();return run(async function(){check(await sb.from("settings").update({building:bn}).eq("id",1));});}
+  if(k==="promo"){var n=parseInt(t.value,10);if(n>=1&&n<=100)return run(async function(){check(await sb.from("settings").update({promote_pct:n}).eq("id",1));});return;}
+  if(t.id==="csv"&&t.files&&t.files[0]){
+    var fr=new FileReader();
+    fr.onload=function(){
+      var rows=String(fr.result).split(/\r?\n/).map(function(l){return l.split(",").map(function(x){return x.trim().replace(/^"|"$/g,"");});})
+        .filter(function(p){return p.length>=3&&p[0]&&p[1]&&/^\S+@\S+\.\S+$/.test(p[2]);})
+        .map(function(p){return {unit:p[0],owner:p[1],email:p[2].toLowerCase()};});
+      var me=(ME.email||"").toLowerCase();
+      if(!rows.length)return fail("No rows found. The file needs three columns: unit, owner name, email.");
+      if(!rows.some(function(r){return r.email===me;}))return fail("Your own email ("+me+") must be in the file, or you would lock yourself out.");
+      var keep=rows.map(function(r){return r.unit;}),gone=S.full.map(function(r){return r.unit;}).filter(function(u){return keep.indexOf(u)<0;});
+      run(async function(){
+        check(await sb.from("roster").upsert(rows,{onConflict:"unit"}));
+        if(gone.length)check(await sb.from("roster").delete().in("unit",gone));
+        S.toast="Roster replaced: "+plural(rows.length,"unit")+".";
+      });
+    };
+    fr.readAsText(t.files[0]);
+  }
+});
+document.addEventListener("input",function(e){var t=e.target,c=t.id&&document.getElementById(t.id+"-n");if(c&&t.maxLength>0)c.textContent=t.value.length+"/"+t.maxLength;});
+window.addEventListener("hashchange",function(){var h=location.hash.replace("#","");if(["agenda","proposals","shelved","roster"].indexOf(h)>=0){S.tab=h;render();}});
+window.addEventListener("focus",function(){
+  if(S.phase!=="app"||Date.now()-S.loadedAt<30000)return;
+  var ae=document.activeElement;if(ae&&/INPUT|TEXTAREA/.test(ae.tagName)&&ae.value)return;
+  run(async function(){});
+});
+
+/* ---------- Start ---------- */
+function start(){
+  if(/^YOUR_/.test(CFG.url)||!window.supabase){S.phase="config";return render();}
+  sb=window.supabase.createClient(CFG.url,CFG.key);
+  render();
+  sb.auth.onAuthStateChange(function(ev,s){
+    var was=session&&session.user.id,now=s&&s.user.id;session=s;
+    if(!s){S.phase="signin";ME=null;return render();}
+    if(was===now&&S.phase!=="loading"&&S.phase!=="signin")return;
+    S.phase="loading";render();
+    setTimeout(function(){load().catch(function(e){S.phase="stranger";ME={email:s.user.email};S.toast=(e&&e.message)||String(e);}).then(function(){
+      var h=location.hash.replace("#","");if(["agenda","proposals","shelved","roster"].indexOf(h)>=0)S.tab=h;render();});},0);
+  });
+}
+start();
+})();
+</script>
+</body>
+</html>
