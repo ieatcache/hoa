@@ -132,7 +132,7 @@ var CFG={url:"https://dqkelttzbdiesosjxeac.supabase.co",key:"sb_publishable_A-Jr
 
 var sb=null,session=null,ME=null;
 var S={building:"",promotePct:25,viewer:null,admin:false,tab:"agenda",toast:"",showNew:false,open:{},openThread:{},compose:null,replyTo:null,bidTo:null,
-  roster:[],full:[],items:[],phase:"loading",sent:"",busy:false,loadedAt:0,confirmRm:null};
+  roster:[],full:[],items:[],noAttach:false,phase:"loading",sent:"",busy:false,loadedAt:0,confirmRm:null};
 
 var esc=function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
 var money=function(n){return "$"+Number(n).toLocaleString("en-US");};
@@ -173,19 +173,21 @@ async function load(){
     sb.from("votes").select("*"),
     sb.from("supports").select("*"),
     sb.from("upvotes").select("*"),
-    ME.admin?sb.from("roster").select("*").order("unit"):Promise.resolve({data:[]})
+    ME.admin?sb.from("roster").select("*").order("unit"):Promise.resolve({data:[]}),
+    sb.from("attachments").select("*").order("id").then(function(r){return r.error?{data:null}:r;})
   ]);
   q.forEach(function(r){if(r.error)throw r.error;});
   var st=q[0].data||{},threads=q[3].data,replies=q[4].data,bids=q[5].data,votes=q[6].data,sups=q[7].data,ups=q[8].data;
   S.building=st.building||"";S.promotePct=st.promote_pct||25;
   S.roster=q[1].data.map(function(r){return {unit:r.unit,owner:r.owner,status:r.joined?"joined":"none"};});
-  S.full=q[9].data;S.viewer=ME.name;S.admin=!!ME.admin;
+  S.full=q[9].data;S.noAttach=q[10].data===null;var atts=q[10].data||[];S.viewer=ME.name;S.admin=!!ME.admin;
   var toBid=function(b){return {c:b.contractor,a:Number(b.amount)};};
   S.items=q[2].data.map(function(i){
     var v={};votes.forEach(function(x){if(x.item_id===i.id)v[x.unit]=x.choice;});
     return {id:i.id,status:i.status,rule:i.rule,title:i.title,body:i.body,author:i.author,deadline:i.deadline||"",votes:v,
       support:sups.filter(function(x){return x.item_id===i.id;}).map(function(x){return x.unit;}),
       bids:bids.filter(function(b){return b.item_id===i.id&&b.thread_id==null;}).map(toBid),
+      docs:atts.filter(function(d){return d.item_id===i.id;}),
       comments:threads.filter(function(t){return t.item_id===i.id;}).map(function(t){
         return {id:t.id,who:t.author,stance:t.stance,title:t.title,text:t.summary,detail:t.detail,
           up:ups.filter(function(u){return u.thread_id===t.id;}).map(function(u){return u.owner;}),
@@ -194,6 +196,18 @@ async function load(){
       })};
   });
   S.phase="app";S.loadedAt=Date.now();
+}
+var OKEXT=/\.(pdf|docx?|xlsx?)$/i,MAXF=10*1024*1024,ACCEPT=".pdf,.doc,.docx,.xls,.xlsx";
+function pickFiles(id){var e=document.getElementById(id);return e&&e.files?Array.prototype.slice.call(e.files):[];}
+function badFile(fs){for(var i=0;i<fs.length;i++){if(!OKEXT.test(fs[i].name))return fs[i].name+" is not a PDF, Word or Excel file.";if(fs[i].size>MAXF)return fs[i].name+" is larger than 10 MB.";}return "";}
+function fsize(n){return n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";}
+async function uploadFiles(itemId,fs){
+  for(var i=0;i<fs.length;i++){
+    var f=fs[i],safe=f.name.replace(/[^A-Za-z0-9._-]+/g,"_").slice(-80);
+    var path="items/"+itemId+"/"+Date.now().toString(36)+Math.random().toString(36).slice(2,8)+"-"+safe;
+    check(await sb.storage.from("attachments").upload(path,f,{contentType:f.type||"application/octet-stream"}));
+    check(await sb.from("attachments").insert({item_id:itemId,name:f.name.slice(0,200),path:path,size:f.size,uploaded_by:S.viewer}));
+  }
 }
 function check(r){if(r.error)throw r.error;return r.data;}
 async function run(fn){
@@ -279,6 +293,16 @@ function bidsBlock(it){
   if(canAdd)h+='<div class="row addrow" style="margin-top:8px"><input type="text" id="bidc-'+it.id+'" placeholder="Contractor name" aria-label="Contractor name"><input type="number" id="bida-'+it.id+'" placeholder="Amount" aria-label="Bid amount in dollars" min="0" style="width:120px"><button data-act="bid" data-id="'+it.id+'">Add bid</button></div>';
   return h+"</div>";
 }
+function docsBlock(it){
+  if(S.noAttach)return "";
+  var canAdd=(isAdmin()||it.author===S.viewer)&&["proposal","agenda"].indexOf(it.status)>=0;
+  if(!it.docs.length&&!canAdd)return "";
+  var h="<div><h3>Documents</h3>";
+  if(it.docs.length)h+='<div class="tablebox"><table><tbody>'+it.docs.map(function(d){return '<tr><td><button class="link" data-act="dl" data-id="'+it.id+'" data-d="'+d.id+'">'+esc(d.name)+'</button></td><td class="amt muted">'+fsize(d.size)+'</td><td class="muted">Added by '+esc(d.uploaded_by)+"</td></tr>";}).join("")+"</tbody></table></div>";
+  else h+='<p class="muted">No documents attached yet.</p>';
+  if(canAdd)h+='<div class="row addrow" style="margin-top:8px"><input type="file" id="af-'+it.id+'" multiple accept="'+ACCEPT+'" aria-label="Documents to attach"><button data-act="attach" data-id="'+it.id+'">Attach</button><span class="muted">PDF, Word or Excel, up to 10 MB each.</span></div>';
+  return h+"</div>";
+}
 function commentsBlock(it){
   var n=it.comments.length,live=it.status!=="shelved";
   var order=it.comments.slice().sort(function(x,y){return y.up.length-x.up.length||x.id-y.id;});
@@ -335,8 +359,8 @@ function card(it){
   var h='<article class="item"><div class="item-head"><div><h2>'+esc(it.title)+'</h2><p class="meta">Raised by '+esc(it.author)+(it.deadline&&it.status==="agenda"?" · Decide by "+esc(fmtDate(it.deadline)):"")+'</p></div><span class="pill '+l[0]+'">'+l[1]+"</span></div>";
   h+="<p>"+esc(open?it.body:trunc(it.body,140))+"</p>";
   h+=onAgenda?voteBlock(it):supportBlock(it);
-  h+='<div><button class="link" data-act="toggle" data-id="'+it.id+'" aria-expanded="'+open+'">'+(open?"Show less":"Open ("+plural(it.bids.length,"bid")+", "+plural(it.comments.length,"thread")+")")+"</button></div>";
-  if(open)h+=bidsBlock(it)+commentsBlock(it);
+  h+='<div><button class="link" data-act="toggle" data-id="'+it.id+'" aria-expanded="'+open+'">'+(open?"Show less":"Open ("+(it.docs.length?plural(it.docs.length,"document")+", ":"")+plural(it.bids.length,"bid")+", "+plural(it.comments.length,"thread")+")")+"</button></div>";
+  if(open)h+=docsBlock(it)+bidsBlock(it)+commentsBlock(it);
   return h+adminBlock(it)+"</article>";
 }
 function listView(filter,empty){
@@ -347,6 +371,7 @@ function newForm(){
   if(!S.showNew)return '<div><button class="primary" data-act="shownew">Post a proposal</button></div>';
   return '<article class="item form"><h2>New proposal</h2><label for="np-title">Title<input type="text" id="np-title" maxlength="120" placeholder="What should the building do?"></label>'+
     '<label for="np-body">Details<textarea id="np-body" placeholder="Why it matters, what it might cost"></textarea></label>'+
+    (S.noAttach?"":'<label for="np-files">Documents (optional): PDF, Word or Excel, up to 10 MB each<input type="file" id="np-files" multiple accept="'+ACCEPT+'"></label>')+
     '<div class="row"><button class="primary" data-act="post">Post proposal</button><button data-act="cancelnew">Cancel</button></div></article>';
 }
 function rosterView(){
@@ -450,12 +475,29 @@ document.addEventListener("click",function(e){
     return run(async function(){check(await sb.from("bids").insert({item_id:it.id,thread_id:a==="cbid"?cid:null,contractor:c,amount:amt,created_by:S.viewer}));});
   }
   if(a==="post"){
-    var title=val("np-title"),body=val("np-body");if(!title)return fail("Give the proposal a title.");
+    var title=val("np-title"),body=val("np-body"),nf=pickFiles("np-files"),bad=badFile(nf);
+    if(!title)return fail("Give the proposal a title.");
+    if(bad)return fail(bad);
     return run(async function(){
       var row=check(await sb.from("items").insert({title:title,body:body,author:S.viewer}).select().single());
+      S.showNew=false;
       check(await sb.rpc("toggle_support",{p_item:row.id}));
-      S.showNew=false;S.toast="Posted. Your own "+plural(mine.length,"vote")+" already "+(mine.length===1?"counts":"count")+" as support.";
+      try{await uploadFiles(row.id,nf);}catch(e){S.open[row.id]=true;throw new Error("The proposal was posted, but a document did not upload: "+((e&&e.message)||e)+" Open the proposal to try attaching it again.");}
+      S.toast="Posted"+(nf.length?" with "+plural(nf.length,"document"):"")+". Your own "+plural(mine.length,"vote")+" already "+(mine.length===1?"counts":"count")+" as support.";
     });
+  }
+  if(a==="attach"){
+    var af=pickFiles("af-"+it.id),ab=badFile(af);
+    if(!af.length)return fail("Choose a file first.");
+    if(ab)return fail(ab);
+    return run(async function(){await uploadFiles(it.id,af);S.toast="Attached "+plural(af.length,"document")+".";});
+  }
+  if(a==="dl"){
+    var doc=it.docs.filter(function(d){return d.id===+b.dataset.d;})[0];if(!doc)return;
+    sb.storage.from("attachments").createSignedUrl(doc.path,300,{download:doc.name}).then(function(r){
+      if(r.error||!r.data)return fail("Could not open that document: "+((r.error&&r.error.message)||"try again."));
+      location.href=r.data.signedUrl;});
+    return;
   }
   if(a==="addunit"){
     var nu=val("ru-unit"),no=val("ru-owner"),ne=toLogin(val("ru-email"));
