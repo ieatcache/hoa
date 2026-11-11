@@ -49,7 +49,7 @@ header.top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-con
 .sample{display:inline-block;font-size:12px;font-weight:600;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 6px;margin-bottom:6px}
 .viewer{display:flex;flex-direction:column;gap:4px;font-size:13px}
 select,input,textarea,button{font:inherit;color:inherit}
-select,input[type=text],input[type=number],textarea{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+select,input[type=text],input[type=password],input[type=date],input[type=number],textarea{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
 textarea{width:100%;min-height:70px;resize:vertical}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
@@ -213,9 +213,10 @@ function header(){
 }
 function signinView(){
   if(S.sent)return shell('<article class="item"><h2>Check your email</h2><p>We sent a sign-in link to '+esc(S.sent)+'. Open it on this device to continue.</p><div><button data-act="resetsent">Use a different email</button></div></article>');
-  return shell('<article class="item form"><h2>Sign in</h2><p class="muted">Enter the email address your building has on file. We will email you a link, no password needed.</p>'+
+  return shell('<article class="item form"><h2>Sign in</h2><p class="muted">Use the email address your building has on file. First time here? Pick a password (6 characters or more) and your account is created on the spot.</p>'+
     '<label for="si-email">Email<input type="text" id="si-email" inputmode="email" autocomplete="email" placeholder="you@example.com"></label>'+
-    '<div class="row"><button class="primary" data-act="signin">Email me a sign-in link</button></div></article>');
+    '<label for="si-pw">Password<input type="password" id="si-pw" autocomplete="current-password"></label>'+
+    '<div class="row"><button class="primary" data-act="pwsignin">Sign in or create account</button><button class="link" data-act="signin">Email me a sign-in link instead</button></div></article>');
 }
 function setupView(){
   return shell('<article class="item form"><h2>Set up your building</h2><p class="muted">You are the first person here, so you become the admin. You can add the other units and owners afterwards.</p>'+
@@ -397,6 +398,22 @@ document.addEventListener("click",function(e){
   if(a==="resetsent"){S.sent="";return render();}
   if(a==="refresh")return run(async function(){});
   if(a==="signout"){sb.auth.signOut();return;}
+  if(a==="pwsignin"){
+    var pe=val("si-email").toLowerCase(),pw=(document.getElementById("si-pw")||{}).value||"";
+    if(!/^\S+@\S+\.\S+$/.test(pe))return fail("Enter a valid email address.");
+    if(pw.length<6)return fail("Enter a password of 6 characters or more.");
+    if(S.busy)return;S.busy=true;
+    (async function(){
+      var r=await sb.auth.signInWithPassword({email:pe,password:pw});
+      if(r.error&&/invalid login credentials/i.test(r.error.message)){
+        var u=await sb.auth.signUp({email:pe,password:pw});
+        if(u.error)S.toast=/already registered/i.test(u.error.message)?"That password is not right for this email. If you first signed in with an emailed link, use the link option below.":u.error.message;
+        else if(!u.data.session)S.toast="That password is not right for this email, or the account could not be created. If you first signed in with an emailed link, use the link option below.";
+      }else if(r.error)S.toast=r.error.message;
+      S.busy=false;if(S.toast)render();
+    })();
+    return;
+  }
   if(a==="signin"){
     var em=val("si-email").toLowerCase();if(!/^\S+@\S+\.\S+$/.test(em))return fail("Enter a valid email address.");
     if(S.busy)return;S.busy=true;
