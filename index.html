@@ -147,6 +147,9 @@ var find=function(id){return S.items.filter(function(i){return i.id===id;})[0];}
 var findThread=function(it,id){return it.comments.filter(function(c){return c.id===id;})[0];};
 var plural=function(n,w){return n+" "+w+(n===1?"":"s");};
 var fmtDate=function(d){return d?new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";};
+var UDOM="@users.hoa.invalid";
+function toLogin(x){x=String(x||"").trim().toLowerCase();if(x.indexOf("@")>=0)return /^\S+@\S+\.\S+$/.test(x)?x:null;return /^[a-z0-9._-]{3,30}$/.test(x)?x+UDOM:null;}
+function disp(e){e=String(e||"");return e.slice(-UDOM.length)===UDOM?e.slice(0,-UDOM.length):e;}
 function trunc(t,n){t=String(t||"");return t.length>n?t.slice(0,n).replace(/\s+\S*$/,"")+"…":t;}
 function tally(it){
   var yes=0,no=0,wait=0,off=0,j=joinedUnits();
@@ -200,7 +203,7 @@ async function run(fn){
 }
 
 /* ---------- Views ---------- */
-function shell(inner){return '<header class="top"><div><h1>'+esc(S.building||"HOA Voting")+"</h1></div>"+(session?'<div class="viewer"><span class="muted">'+esc(session.user.email)+'</span><button data-act="signout">Sign out</button></div>':"")+"</header>"+(S.toast?'<p class="toast" role="status">'+esc(S.toast)+"</p>":"")+inner;}
+function shell(inner){return '<header class="top"><div><h1>'+esc(S.building||"HOA Voting")+"</h1></div>"+(session?'<div class="viewer"><span class="muted">'+esc(disp(session.user.email))+'</span><button data-act="signout">Sign out</button></div>':"")+"</header>"+(S.toast?'<p class="toast" role="status">'+esc(S.toast)+"</p>":"")+inner;}
 function header(){
   var j=joinedUnits().length,t=total(),mine=unitsOf(S.viewer);
   return '<header class="top"><div><h1>'+esc(S.building||"Your building")+'</h1>'+
@@ -213,10 +216,11 @@ function header(){
 }
 function signinView(){
   if(S.sent)return shell('<article class="item"><h2>Check your email</h2><p>We sent a sign-in link to '+esc(S.sent)+'. Open it on this device to continue.</p><div><button data-act="resetsent">Use a different email</button></div></article>');
-  return shell('<article class="item form"><h2>Sign in</h2><p class="muted">Use the email address your building has on file. First time here? Pick a password (6 characters or more) and your account is created on the spot.</p>'+
-    '<label for="si-email">Email<input type="text" id="si-email" inputmode="email" autocomplete="email" placeholder="you@example.com"></label>'+
+  return shell('<article class="item form"><h2>Sign in</h2><p class="muted">Enter the username your building admin gave you. First time here? Pick a password (6 characters or more) and your account is created on the spot.</p>'+
+    '<label for="si-email">Username<input type="text" id="si-email" autocomplete="username" autocapitalize="none" placeholder="your username"></label>'+
     '<label for="si-pw">Password<input type="password" id="si-pw" autocomplete="current-password"></label>'+
-    '<div class="row"><button class="primary" data-act="pwsignin">Sign in or create account</button><button class="link" data-act="signin">Email me a sign-in link instead</button></div></article>');
+    '<div class="row"><button class="primary" data-act="pwsignin">Sign in or create account</button></div>'+
+    '<p class="muted" style="font-size:13px">Signed up earlier with an email link? Type that email above and <button class="link" data-act="signin">email me a sign-in link</button>.</p></article>');
 }
 function setupView(){
   return shell('<article class="item form"><h2>Set up your building</h2><p class="muted">You are the first person here, so you become the admin. You can add the other units and owners afterwards.</p>'+
@@ -226,7 +230,7 @@ function setupView(){
     '<div class="row"><button class="primary" data-act="setup">Create building</button></div></article>');
 }
 function strangerView(){
-  return shell('<article class="item"><h2>Your email is not on the roster</h2><p>'+esc(ME&&ME.email)+" is not listed as an owner. Ask your building admin to add this email address to the roster, then sign in again.</p></article>");
+  return shell('<article class="item"><h2>Your username is not on the roster</h2><p>'+esc(disp(ME&&ME.email))+" is not listed as an owner. Ask your building admin to add this exact username to the roster, then refresh this page.</p></article>");
 }
 function nav(){
   var c=function(f){return S.items.filter(f).length;};
@@ -350,12 +354,12 @@ function rosterView(){
   var rows=S.full.map(function(r){
     var mine=r.email.toLowerCase()===me,u=esc(r.unit);
     var act=mine?"":'<button data-act="mkadmin" data-u="'+u+'">'+(r.is_admin?"Remove admin":"Make admin")+'</button><button data-act="rmunit" data-u="'+u+'">'+(S.confirmRm===r.unit?"Click again to remove":"Remove")+"</button>";
-    return '<tr><td class="num">'+u+"</td><td>"+esc(r.owner)+(r.is_admin?' <span class="muted">(admin)</span>':"")+"</td><td>"+esc(r.email)+"</td><td>"+(r.joined_at?"Joined":"Not signed in yet")+'</td><td><div class="row">'+act+"</div></td></tr>";
+    return '<tr><td class="num">'+u+"</td><td>"+esc(r.owner)+(r.is_admin?' <span class="muted">(admin)</span>':"")+"</td><td>"+esc(disp(r.email))+"</td><td>"+(r.joined_at?"Joined":"Not signed in yet")+'</td><td><div class="row">'+act+"</div></td></tr>";
   }).join("");
-  return '<article class="item"><h2>Owner roster</h2><p class="muted">One row per unit. An owner with two units has two rows with the same email, and two votes. Owners join by signing in at this site with the email listed here. The site does not email them an invitation, so send them the address yourself.</p>'+
-    '<div class="tablebox"><table><thead><tr><th>Unit</th><th>Owner</th><th>Email</th><th>Status</th><th></th></tr></thead><tbody>'+rows+"</tbody></table></div>"+
-    '<div class="row addrow"><input type="text" id="ru-unit" placeholder="Unit" aria-label="Unit" style="flex:0 1 90px"><input type="text" id="ru-owner" placeholder="Owner name" aria-label="Owner name"><input type="text" id="ru-email" placeholder="Owner email" aria-label="Owner email" inputmode="email"><button class="primary" data-act="addunit">Add unit</button></div></article>'+
-    '<article class="item form"><h2>Replace the roster from a CSV file</h2><p class="muted">Three columns: unit, owner name, email. A header row is fine. Your own row must be in the file. Units missing from the file are removed along with their votes.</p>'+
+  return '<article class="item"><h2>Owner roster</h2><p class="muted">One row per unit. An owner with two units has two rows with the same username, and two votes. Give each owner a username here, then tell them the username and the site address. They choose their own password the first time they sign in.</p>'+
+    '<div class="tablebox"><table><thead><tr><th>Unit</th><th>Owner</th><th>Username</th><th>Status</th><th></th></tr></thead><tbody>'+rows+"</tbody></table></div>"+
+    '<div class="row addrow"><input type="text" id="ru-unit" placeholder="Unit" aria-label="Unit" style="flex:0 1 90px"><input type="text" id="ru-owner" placeholder="Owner name" aria-label="Owner name"><input type="text" id="ru-email" placeholder="Username" aria-label="Username" autocapitalize="none"><button class="primary" data-act="addunit">Add unit</button></div></article>'+
+    '<article class="item form"><h2>Replace the roster from a CSV file</h2><p class="muted">Three columns: unit, owner name, username. A header row is fine. Your own row must be in the file. Units missing from the file are removed along with their votes.</p>'+
     '<div class="row"><input type="file" id="csv" accept=".csv,text/csv,text/plain" aria-label="Roster CSV file"></div></article>'+
     '<article class="item form"><h2>Settings</h2><label for="bname">Building name<input type="text" id="bname" data-chg="bname" value="'+esc(S.building)+'"></label>'+
     '<label for="promo">Share of all units a proposal needs to reach the agenda (percent)<input type="number" id="promo" data-chg="promo" min="1" max="100" value="'+S.promotePct+'" style="width:100px"></label>'+
@@ -399,23 +403,24 @@ document.addEventListener("click",function(e){
   if(a==="refresh")return run(async function(){});
   if(a==="signout"){sb.auth.signOut();return;}
   if(a==="pwsignin"){
-    var pe=val("si-email").toLowerCase(),pw=(document.getElementById("si-pw")||{}).value||"";
-    if(!/^\S+@\S+\.\S+$/.test(pe))return fail("Enter a valid email address.");
+    var pe=toLogin(val("si-email")),pw=(document.getElementById("si-pw")||{}).value||"";
+    if(!pe)return fail("Enter your username: 3 to 30 letters, numbers, dots or dashes, no spaces.");
     if(pw.length<6)return fail("Enter a password of 6 characters or more.");
     if(S.busy)return;S.busy=true;
     (async function(){
+      var CONF='Supabase still has "Confirm email" turned on, so the account could not be created. In Supabase go to Authentication, Sign In / Providers, Email, turn off "Confirm email" and save, then try again.';
       var r=await sb.auth.signInWithPassword({email:pe,password:pw});
       if(r.error&&/invalid login credentials/i.test(r.error.message)){
         var u=await sb.auth.signUp({email:pe,password:pw});
-        if(u.error)S.toast=/already registered/i.test(u.error.message)?"That password is not right for this email. If you first signed in with an emailed link, use the link option below.":u.error.message;
-        else if(!u.data.session)S.toast="That password is not right for this email, or the account could not be created. If you first signed in with an emailed link, use the link option below.";
-      }else if(r.error)S.toast=r.error.message;
+        if(u.error)S.toast=/already registered/i.test(u.error.message)?"That password is not right for this username.":/rate limit|confirmation|sending/i.test(u.error.message)?CONF:u.error.message;
+        else if(!u.data.session)S.toast=u.data.user&&u.data.user.identities&&u.data.user.identities.length?CONF:"That password is not right for this username.";
+      }else if(r.error)S.toast=/not confirmed/i.test(r.error.message)?CONF:r.error.message;
       S.busy=false;if(S.toast)render();
     })();
     return;
   }
   if(a==="signin"){
-    var em=val("si-email").toLowerCase();if(!/^\S+@\S+\.\S+$/.test(em))return fail("Enter a valid email address.");
+    var em=val("si-email").toLowerCase();if(!/^\S+@\S+\.\S+$/.test(em))return fail("Type your email address in the box above first.");
     if(S.busy)return;S.busy=true;
     sb.auth.signInWithOtp({email:em,options:{emailRedirectTo:location.origin+location.pathname}}).then(function(r){
       S.busy=false;if(r.error)S.toast=r.error.message;else S.sent=em;render();});
@@ -453,8 +458,8 @@ document.addEventListener("click",function(e){
     });
   }
   if(a==="addunit"){
-    var nu=val("ru-unit"),no=val("ru-owner"),ne=val("ru-email").toLowerCase();
-    if(!nu||!no||!/^\S+@\S+\.\S+$/.test(ne))return fail("Enter a unit, an owner name and a valid email.");
+    var nu=val("ru-unit"),no=val("ru-owner"),ne=toLogin(val("ru-email"));
+    if(!nu||!no||!ne)return fail("Enter a unit, an owner name and a username (3 to 30 letters, numbers, dots or dashes).");
     if(S.roster.some(function(r){return r.unit===nu;}))return fail("Unit "+nu+" is already on the roster.");
     return run(async function(){check(await sb.from("roster").insert({unit:nu,owner:no,email:ne}));});
   }
@@ -477,11 +482,11 @@ document.addEventListener("change",function(e){
     var fr=new FileReader();
     fr.onload=function(){
       var rows=String(fr.result).split(/\r?\n/).map(function(l){return l.split(",").map(function(x){return x.trim().replace(/^"|"$/g,"");});})
-        .filter(function(p){return p.length>=3&&p[0]&&p[1]&&/^\S+@\S+\.\S+$/.test(p[2]);})
-        .map(function(p){return {unit:p[0],owner:p[1],email:p[2].toLowerCase()};});
+        .filter(function(p){return p.length>=3&&p[0]&&p[1]&&toLogin(p[2]);})
+        .map(function(p){return {unit:p[0],owner:p[1],email:toLogin(p[2])};});
       var me=(ME.email||"").toLowerCase();
-      if(!rows.length)return fail("No rows found. The file needs three columns: unit, owner name, email.");
-      if(!rows.some(function(r){return r.email===me;}))return fail("Your own email ("+me+") must be in the file, or you would lock yourself out.");
+      if(!rows.length)return fail("No rows found. The file needs three columns: unit, owner name, username.");
+      if(!rows.some(function(r){return r.email===me;}))return fail("Your own login ("+disp(me)+") must be in the file, or you would lock yourself out.");
       var keep=rows.map(function(r){return r.unit;}),gone=S.full.map(function(r){return r.unit;}).filter(function(u){return keep.indexOf(u)<0;});
       run(async function(){
         check(await sb.from("roster").upsert(rows,{onConflict:"unit"}));
